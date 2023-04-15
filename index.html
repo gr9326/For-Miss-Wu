@@ -1,0 +1,273 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <title>
+      Intro to MapView - Create a 2D map | Sample | ArcGIS Maps SDK for
+      JavaScript 4.26
+    </title>
+
+    <style>
+        html,
+        body,
+        #viewDiv {
+          padding: 0;
+          margin: 0;
+          height: 100%;
+          width: 100%;
+        }
+
+        #header {
+          height: 35px;
+          background-color: #74C476;
+          color: white;
+          text-align: center;
+          line-height: 30px;
+          font-size: 15px;
+
+
+        #optionsDiv {
+        background-color: blue;
+        color: black;
+        padding: 6px;
+        max-width: 400px;
+        }
+
+      }
+    </style>
+
+    <link
+      rel="stylesheet"
+      href="https://js.arcgis.com/4.26/esri/themes/light/main.css"
+    />
+
+    <script src="https://js.arcgis.com/4.26/"></script>
+
+    <script>
+      require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/layers/FeatureLayer",
+        "esri/widgets/LayerList",
+        "esri/widgets/Legend",
+        "esri/widgets/BasemapGallery",
+        "esri/widgets/Expand",
+        "esri/widgets/Search",
+        "esri/widgets/ScaleBar",
+        "esri/Graphic",
+        "esri/widgets/Editor",
+        "esri/widgets/DistanceMeasurement2D"
+      ], (
+        Map,
+        MapView,
+        FeatureLayer,
+        LayerList,
+        Legend,
+        BasemapGallery,
+        Expand,
+        Search,
+        ScaleBar,
+        Graphic,
+        Editor,
+        DistanceMeasurement2D
+      ) => {
+        const map = new Map({
+          basemap: "topo-vector"
+        });
+
+        const view = new MapView({
+          container: "viewDiv",
+          map: map,
+          zoom: 4,
+          center: [118.15, 24.6] // longitude, latitude
+        });
+        const featureLayer1 = new FeatureLayer({
+          url: "https://www.geosceneonline.cn/server/rest/services/Hosted/全国各省普通高等学校数/FeatureServer"
+        });
+        map.add(featureLayer1);
+
+        const layer = new FeatureLayer({
+          url: "https://www.geosceneonline.cn/server/rest/services/Hosted/高等院校/FeatureServer"
+        });
+        map.add(layer);
+
+        const layerList = new LayerList({
+          view: view
+        });
+        view.ui.add(
+          new Expand({ content: layerList, expanded: true }),
+          "top-right"
+        );
+
+        const legend = new Legend({
+          view: view
+        });
+        view.ui.add(
+          new Expand({ content: legend, expanded: true }),
+          "top-right"
+        );
+
+        const basemaps = new BasemapGallery({
+          view: view
+        });
+        const expand = new Expand({
+          view: view,
+          content: basemaps,
+          expanded: true
+        });
+        view.ui.add(expand, {
+          position: "top-right"
+        });
+
+        const searchWidget = new Search({
+          view: view
+        });
+
+        // Add the search widget to the top right corner of the view
+        view.ui.add(searchWidget, {
+          position: "top-left"
+        });
+
+        const scaleBar = new ScaleBar({
+          view: view,
+          unit: "dual" // The scale bar displays both metric and non-metric units.
+        });
+
+        // Add the widget to the bottom left corner of the view
+        view.ui.add(scaleBar, {
+          position: "bottom-left"
+        });
+
+        //query
+        view.ui.add("optionsDiv", "top-right");
+
+        // additional query fields initially set to null for basic query
+        let distance = 5;
+        let units = "miles";
+
+        //create graphic for mouse point click
+        const pointGraphic = new Graphic({
+          symbol: {
+            type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+            color: [0, 0, 139],
+            outline: {
+              color: [255, 255, 255],
+              width: 1.5
+            }
+          }
+        });
+
+        // Create graphic for distance buffer
+        const bufferGraphic = new Graphic({
+          symbol: {
+            type: "simple-fill", // autocasts as new SimpleFillSymbol()
+            color: [173, 216, 230, 0.2],
+            outline: {
+              // autocasts as new SimpleLineSymbol()
+              color: [255, 255, 255],
+              width: 1
+            }
+          }
+        });
+
+        // when query type changes, set appropriate values
+        const queryOpts = document.getElementById("query-type");
+
+        queryOpts.addEventListener("change", () => {
+          switch (queryOpts.value) {
+            // values set for distance query
+            case "distance":
+              distance = 25;
+              units = "miles";
+              break;
+            default:
+              // Default set to basic query
+              distance = 5;
+              units = miles;
+          }
+        });
+        layer.load().then(() => {
+          // Set the view extent to the data extent
+          view.extent = layer.fullExtent;
+          layer.popupTemplate = layer.createPopupTemplate();
+        });
+
+        view.on("click", (event) => {
+          view.graphics.remove(pointGraphic);
+          if (view.graphics.includes(bufferGraphic)) {
+            view.graphics.remove(bufferGraphic);
+          }
+          queryFeatures(event);
+        });
+
+        function queryFeatures(screenPoint) {
+          const point = view.toMap(screenPoint);
+          layer
+            .queryFeatures({
+              geometry: point,
+              // distance and units will be null if basic query selected
+              distance: distance,
+              units: units,
+              spatialRelationship: "intersects",
+              returnGeometry: false,
+              returnQueryGeometry: true,
+              outFields: ["*"]
+            })
+            .then((featureSet) => {
+              // set graphic location to mouse pointer and add to mapview
+              pointGraphic.geometry = point;
+              view.graphics.add(pointGraphic);
+              // open popup of query result
+              view.popup.open({
+                location: point,
+                features: featureSet.features,
+                featureMenuOpen: true
+              });
+              if (featureSet.queryGeometry) {
+                bufferGraphic.geometry = featureSet.queryGeometry;
+                view.graphics.add(bufferGraphic);
+              }
+            });
+        }
+        
+
+        const editor = new Editor({
+          //编辑
+          view: view
+        });
+
+        const editorExpand = new Expand({
+          view: view,
+          content: editor,
+          expanded: false
+        });
+        view.ui.add(editorExpand, { position: "top-left" });
+
+        let measurementWidget = new DistanceMeasurement2D({
+          view: view
+        });
+        const measurementWidgetExpand = new Expand({
+          view: view,
+          content: measurementWidget,
+          expanded: false
+        });
+        view.ui.add(measurementWidgetExpand, { position: "top-left" });
+      });
+    </script>
+  </head>
+
+  <body>
+    <div id="header">全国高等院校分布情况一览图</div>
+    <div id="optionsDiv" class="esri-widget">
+      <p>查询选择</p>
+      <select id="query-type" class="esri-widget">
+        <option value="basic">高校信息查询</option>
+        <option value="distance">距离查询（25 miles范围内的高校）</option>
+      </select>
+    </div>
+    <div id="viewDiv"></div>
+  </body>
+</html>
